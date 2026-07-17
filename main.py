@@ -1,3 +1,4 @@
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.runnables import RunnableLambda
 from langchain_core.prompts import PromptTemplate
@@ -12,33 +13,19 @@ import streamlit as st
 
 load_dotenv()
 
-def create_chatbot(uploaded_file:str):
-    file_name = os.path.splitext(os.path.basename(uploaded_file))[0]
-
-    embeddings = HuggingFaceEndpointEmbeddings(model="BAAI/bge-small-en-v1.5")
-    vector_store = None
-    if not os.path.exists(os.path.join("faiss_index", file_name)):
-        loader = PyPDFLoader(file_path=uploaded_file)
-        docs = loader.load()
-
-        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
-        texts = splitter.split_documents(docs)
-        
-        vector_store = FAISS.from_documents(texts, embeddings)
-        vector_store.save_local(os.path.join("faiss_index", file_name))
-    else:
-        vector_store = FAISS.load_local(os.path.join("faiss_index", file_name), embeddings, allow_dangerous_deserialization=True)
-
-    retriever = vector_store.as_retriever(
-        search_type="mmr",
-        search_kwargs={"k": 12, "lambda_mult": 0.7}
+@st.cache_resource
+def get_model():
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
+        temperature=0.7
     )
-    return retriever
 
-model = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0.7
-)
+@st.cache_resource
+def get_embeddings():
+    return HuggingFaceEndpointEmbeddings(model="BAAI/bge-small-en-v1.5")
+
+model = get_model()
+embeddings = get_embeddings()
 
 prompt = PromptTemplate(
         template="""
@@ -68,11 +55,49 @@ prompt = PromptTemplate(
         input_variables=["context", "history", "question"]
     )
 
+
+summarize_prompt = PromptTemplate(
+    template="""
+    You are a message summary expert.
+    Summarize the following text in such a way that anyone can understand the essence in as minimum as possible words.
+
+    Text to Summarize:
+    {text}
+    """,
+    input_variables=["text"]
+)
+
+parser = StrOutputParser()
+
 def format_docs(docs : list) -> str:
-    return "\n\n".join(doc.page_content for doc in docs)
+    return "\n".join(f"Page {doc.metadata['page']}\n{doc.page_content}\n" for doc in docs)
 
 def format_messages(messages) -> str:
-    return "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages[:-1]])
+    return "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
+
+
+def create_chatbot(uploaded_file:str):
+    file_name = os.path.splitext(os.path.basename(uploaded_file))[0]
+
+    vector_store = None
+    if not os.path.exists(os.path.join("faiss_index", file_name)):
+        loader = PyPDFLoader(file_path=uploaded_file)
+        docs = loader.load()
+
+        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+        texts = splitter.split_documents(docs)
+        
+        vector_store = FAISS.from_documents(texts, embeddings)
+        vector_store.save_local(os.path.join("faiss_index", file_name))
+    else:
+        vector_store = FAISS.load_local(os.path.join("faiss_index", file_name), embeddings, allow_dangerous_deserialization=True)
+
+    retriever = vector_store.as_retriever(
+        search_type="mmr",
+        search_kwargs={"k": 12, "lambda_mult": 0.7}
+    )
+    return retriever
+
 
 st.title("PDF Chatbot")
 
@@ -82,13 +107,16 @@ if uploaded_file:
         st.session_state.last_file = None
     
     if uploaded_file.name != st.session_state.last_file:
-        with st.spinner("Processing PDF..."):
-            os.makedirs("uploads", exist_ok=True)
-            save_path = os.path.join("uploads", uploaded_file.name)
-            with open(save_path, "wb") as f:
-                f.write(uploaded_file.getvalue())
-            st.session_state.retriever = create_chatbot(save_path)
+        try:
+            with st.spinner("Processing PDF..."):
+                os.makedirs("uploads", exist_ok=True)
+                save_path = os.path.join("uploads", uploaded_file.name)
+                with open(save_path, "wb") as f:
+                    f.write(uploaded_file.getvalue())
+                st.session_state.retriever = create_chatbot(save_path)
             st.session_state.last_file = uploaded_file.name
+        except Exception as e:
+            st.error(f"Error processing file: {e}")
 
 if "retriever" in st.session_state:
     if "messages" not in st.session_state:
@@ -104,7 +132,7 @@ if "retriever" in st.session_state:
     chain = (
         {
             "context" : get_question | retriever | format_docs,
-            "history": lambda x: format_messages(x['messages']),
+            "history": lambda x: format_messages(x['messages'][:-1]),
             "question" : get_question
         }
         | prompt
@@ -119,12 +147,22 @@ if "retriever" in st.session_state:
 
         with st.spinner("Generating Response"):
 
-            answer = chain.invoke(
+            if len(st.session_state.messages) > 20:
+                
+                summary_chain = summarize_prompt | model | parser
+                summary_content = summary_chain.invoke({
+                    "text": format_messages(st.session_state.messages[:-10])
+                })
+                st.session_state.messages = [
+                    {"role": "assistant", "content": summary_content} , *st.session_state.messages[-10:]
+                ]
+
+            answer_stream = chain.stream(
                 {
                     'question': query,
                     'messages': st.session_state.messages
                 }
             )
 
-            st.session_state.messages.append({"role": "assistant", "content" : answer.content})
-            st.chat_message("assistant").write(answer.content)
+            response = st.chat_message("assistant").write_stream(answer_stream)
+            st.session_state.messages.append({"role": "assistant", "content" : response})

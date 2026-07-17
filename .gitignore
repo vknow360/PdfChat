@@ -5,3 +5,5 @@ faiss_index/
 uploads/
 *.pyc
 __pycache__/
+
+*.log

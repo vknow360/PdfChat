@@ -1,10 +1,10 @@
 # PDF Chatbot 📄🤖
 
-A full-stack conversational AI application built with Streamlit and LangChain that allows you to upload, process, and chat with your PDF documents seamlessly.
+A conversational AI backend built with FastAPI and LangChain that allows you to upload, process, and chat with your PDF documents seamlessly.
 
 ## ✨ Features
 
-- **Document Ingestion**: Upload any PDF document directly through the UI.
+- **Document Ingestion**: Upload any PDF document directly via the API.
 - **Advanced RAG Architecture**: 
   - Text chunking via `RecursiveCharacterTextSplitter`
   - High-quality vector embeddings using HuggingFace (`BAAI/bge-small-en-v1.5`)
@@ -15,7 +15,7 @@ A full-stack conversational AI application built with Streamlit and LangChain th
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: [Streamlit](https://streamlit.io/)
+- **Backend**: [FastAPI](https://fastapi.tiangolo.com/)
 - **Orchestration**: [LangChain](https://python.langchain.com/)
 - **LLM Provider**: [Groq](https://groq.com/) (Llama 3.3 70B)
 - **Embeddings**: [HuggingFace](https://huggingface.co/)
@@ -43,11 +43,11 @@ HUGGINGFACEHUB_API_TOKEN=your_huggingface_api_token_here
 ```
 
 ### 4. Run the Application
-Start the Streamlit development server:
+Start the development server:
 ```bash
-streamlit run main.py
+python main.py
 ```
-The app will open automatically in your browser at `http://localhost:8501`.
+The API will be available at `http://127.0.0.1:8000`. You can access the interactive API documentation at `http://127.0.0.1:8000/docs`.
 
 ## 📁 Project Structure
 
@@ -57,7 +57,7 @@ PdfChatbot/
 ├── .env                 # Environment variables (API keys)
 ├── .env.example         # Template for environment variables
 ├── src/
-│   ├── app.py           # Streamlit UI and app logic
+│   ├── app.py           # FastAPI routes and app logic
 │   ├── chains.py        # LangChain pipelines and prompts
 │   ├── config.py        # Model and embedding configurations
 │   ├── ingestion.py     # PDF processing and FAISS indexing
@@ -68,11 +68,11 @@ PdfChatbot/
 
 ## 🧠 How It Works
 
-1. **Upload**: You upload a PDF via the Streamlit interface.
+1. **Upload**: You upload a PDF via the `/upload` API endpoint.
 2. **Process**: The PDF is saved to `/uploads` and parsed into text using `PyPDFLoader`.
 3. **Chunk & Embed**: The text is split into chunks of 500 characters and embedded using HuggingFace.
 4. **Index**: The embeddings are stored in a FAISS vector database inside `/faiss_index` for fast retrieval.
 5. **Chat**: When you ask a question, the app retrieves the most relevant chunks from FAISS, injects them into a prompt alongside your chat history, and streams the answer back from Groq's Llama 3 model.
 
 ---
-*Built with LangChain & Streamlit.*
+*Built with LangChain & FastAPI.*

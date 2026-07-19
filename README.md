@@ -32,7 +32,7 @@ cd PdfChatbot
 ### 2. Install dependencies
 Ensure you have Python 3.9+ installed, then install the required packages:
 ```bash
-pip install streamlit langchain langchain-groq langchain-huggingface langchain-community faiss-cpu python-dotenv pypdf
+pip install -r requirements.txt
 ```
 
 ### 3. Environment Variables
